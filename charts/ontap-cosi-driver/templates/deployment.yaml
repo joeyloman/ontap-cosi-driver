@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ontap-cosi-driver.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ontap-cosi-driver.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  minReadySeconds: 30
+  progressDeadlineSeconds: 600
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      {{- include "ontap-cosi-driver.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ontap-cosi-driver.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "ontap-cosi-driver.fullname" . }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: driver
+          {{- with .Values.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: "{{ .Values.driverImage.repository }}:{{ .Values.driverImage.tag }}"
+          imagePullPolicy: {{ .Values.driverImage.pullPolicy }}
+          envFrom:
+            - secretRef:
+                name: {{ include "ontap-cosi-driver.fullname" . }}-credentials
+          env:
+            - name: ONTAP_MULTITENANT
+              value: {{ .Values.multiTenant.enabled | toString | quote }}
+          volumeMounts:
+            - name: cosi-socket-dir
+              mountPath: /var/lib/cosi
+            - name: config
+              readOnly: true
+              mountPath: /etc/cosi
+            {{- if .Values.ontap.mgmt.tls.caCertPath }}
+            - name: ca-cert
+              readOnly: true
+              mountPath: /etc/cosi/ca-cert
+            {{- end }}
+          resources:
+            {{- toYaml .Values.resources.driver | nindent 12 }}
+        - name: objectstorage-provisioner-sidecar
+          image: "{{ .Values.sidecarImage.repository }}:{{ .Values.sidecarImage.tag }}"
+          imagePullPolicy: {{ .Values.sidecarImage.pullPolicy }}
+          args:
+            - "-zap-log-level={{ .Values.sidecarLogging.logLevel }}"
+            - "-zap-devel={{ .Values.sidecarLogging.devel }}"
+          securityContext:
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: cosi-socket-dir
+              mountPath: /var/lib/cosi
+          resources:
+            {{- toYaml .Values.resources.sidecar | nindent 12 }}
+      volumes:
+        - name: cosi-socket-dir
+          emptyDir: {}
+        - name: config
+          configMap:
+            name: {{ include "ontap-cosi-driver.fullname" . }}-configuration
+            items:
+              - key: config.yaml
+                path: config.yaml
+        {{- if .Values.ontap.mgmt.tls.caCertPath }}
+        - name: ca-cert
+          secret:
+            secretName: {{ include "ontap-cosi-driver.fullname" . }}-ca-cert
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

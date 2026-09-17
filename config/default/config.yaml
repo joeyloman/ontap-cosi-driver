@@ -1,0 +1,14 @@
+# Root configuration for customizing the behavior of the driver.
+# This includes the storage backend mode, overrides for specific configurations,
+# and errors to inject into driver calls.
+
+mode: "s3:impl"     # Mode of operation for the driver. Options:
+                    # - "azure:fake" : Fake Azure Blob storage mode.
+# - "s3:impl"    : ONTAP S3 REST implementation mode.
+#                 Requires ONTAP_MGMT_ENDPOINT, ONTAP_MGMT_SVM_UUID, ONTAP_MGMT_USERNAME, and ONTAP_MGMT_PASSWORD.
+# - "s3:fake"    : Fake S3 mode for testing.
+
+overrides:          # Overrides configuration for bucket and credentials.
+  bucketID: ""  # ID of the bucket to use in driver operations.
+
+
