@@ -1,0 +1,21 @@
+apiVersion: v2
+name: ontap-cosi-driver
+description: COSI (Container Object Storage Interface) driver for NetApp ONTAP S3
+
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+
+keywords:
+  - cosi
+  - ontap
+  - netapp
+  - object-storage
+  - s3
+
+home: https://github.com/joeyloman/ontap-cosi-driver
+
+maintainers:
+  - name: Joey Loman
+    email: joey@binbash.org
+ 

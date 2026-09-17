@@ -1,0 +1,48 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "ontap-cosi-driver.fullname" . }}
+  labels:
+    {{- include "ontap-cosi-driver.labels" . | nindent 4 }}
+rules:
+  - apiGroups:
+      - objectstorage.k8s.io
+    resources:
+      - buckets
+      - bucketclaims
+      - bucketaccesses
+      - bucketaccessclasses
+      - buckets/status
+      - bucketaccesses/status
+      - bucketclaims/status
+      - bucketaccessclasses/status
+    verbs:
+      - create
+      - get
+      - update
+      - delete
+      - list
+      - watch
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - create
+      - get
+      - update
+      - delete
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - events
+      - secrets
+    verbs:
+      - create
+      - get
+      - update
+      - delete
+      - list
+      - watch

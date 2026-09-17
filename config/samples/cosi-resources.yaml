@@ -1,0 +1,41 @@
+apiVersion: objectstorage.k8s.io/v1alpha2
+kind: BucketClass
+metadata:
+  name: ontap-bucket-class
+spec:
+  driverName: ontap.objectstorage.k8s.io
+  deletionPolicy: Delete
+  parameters:
+    size: "50Gi"
+---
+apiVersion: objectstorage.k8s.io/v1alpha2
+kind: BucketClaim
+metadata:
+  name: ontap-test-bucket
+  namespace: default
+spec:
+  bucketClassName: ontap-bucket-class
+  protocols:
+    - S3
+---
+apiVersion: objectstorage.k8s.io/v1alpha2
+kind: BucketAccessClass
+metadata:
+  name: ontap-access-class
+spec:
+  driverName: ontap.objectstorage.k8s.io
+  authenticationType: Key
+---
+apiVersion: objectstorage.k8s.io/v1alpha2
+kind: BucketAccess
+metadata:
+  name: ontap-test-access
+  namespace: default
+spec:
+  bucketAccessClassName: ontap-access-class
+  protocol: S3
+  bucketClaims:
+    - bucketClaimName: ontap-test-bucket
+      accessModes:
+        objectData: ReadWrite
+      accessSecretName: ontap-test-credentials

@@ -1,0 +1,107 @@
+# Default values for ontap-cosi-driver.
+# This is a YAML-formatted file.
+
+# Number of replicas
+replicaCount: 1
+
+# Driver name advertised to COSI
+driverName: ontap.objectstorage.k8s.io
+
+# Global image pull secret for the registry
+imagePullSecrets:
+  - name: registry-credentials
+
+nameOverride: ""
+fullnameOverride: ""
+
+# Driver container image
+driverImage:
+  repository: registry.example.com/kubernetes/ontap-cosi-driver
+  tag: main
+  pullPolicy: IfNotPresent
+
+# Sidecar container image
+sidecarImage:
+  repository: registry.example.com/kubernetes/objectstorage-sidecar
+  tag: main
+  pullPolicy: IfNotPresent
+
+# Sidecar logging
+sidecarLogging:
+  logLevel: debug
+  devel: true
+
+# Driver operation mode: "s3:impl", "s3:fake", or "azure:fake"
+mode: "s3:impl"
+
+# Multi-tenant mode: the driver resolves per-tenant ONTAP credentials from the
+# Secret 'ontap-cosi-driver-credentials' in each BucketClaim/BucketAccess
+# namespace instead of this deployment's own credentials Secret. The combined
+# driver+sidecar images must support this (driver >= ontap-20260901-r1,
+# sidecar >= ontap-20260917, built from the tenant-namespace-injection branch).
+multiTenant:
+  enabled: false
+
+# Override the bucket ID used in all driver operations (leave empty to use COSI-assigned IDs)
+overrideBucketID: ""
+
+# ONTAP connection settings
+ontap:
+  mgmt:
+    # ONTAP management endpoint which is used to talk to the ONTAP API
+    endpoint: "ontap-endpoint.example.com"
+    # Determine if the ONTAP management endpoint uses http or https
+    ssl: true
+    # Authentication credentials for the ONTAP management endpoint
+    auth:
+      username: "<ONTAP_USERNAME>"
+      password: "<ONTAP_PASSWORD>"
+    svmUUID: "<ONTAP_SVM_UUID>"
+    # TLS settings for the ONTAP management endpoint connection.
+    tls:
+      # Path to a PEM-encoded CA certificate file inside the container.
+      # When set, this CA cert is used to verify the S3 endpoint's TLS certificate
+      # instead of (or in addition to) the system CA pool.
+      # If using the Helm chart, mount at /etc/cosi/ca-cert/ca.crt by setting
+      # caCertPath: "/etc/cosi/ca-cert/ca.crt" and providing caCertContent.
+      caCertPath: "/etc/cosi/ca-cert/ca.crt"
+      # PEM-encoded CA certificate content. Required when caCertPath is set.
+      # This creates a Kubernetes Secret containing the Company Private CA certificate.
+      caCertContent: ""
+      # Skip TLS certificate verification (insecure, for testing only).
+      skipVerify: false
+  s3:
+    # S3 endpoint advertised to consumers in the BucketAccess credentials Secret
+    # (COSI_S3_ENDPOINT). Leave empty to fall back to `endpoint` above.
+    endpoint: "s3-endpoint.example.com"
+    # Determine if the COSI endpoint uses http or https
+    ssl: true
+    # If there is a region configured in ONTAP you can place it here.
+    region: "us-east-1"
+
+# Resource requests
+resources:
+  driver:
+    requests:
+      cpu: 25m
+      memory: 64M
+    limits: {}
+  sidecar:
+    requests:
+      cpu: 25m
+      memory: 64M
+    limits: {}
+
+# Security context for the pod
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+
+# Security context for the driver container
+containerSecurityContext:
+  readOnlyRootFilesystem: true
+
+# Node selector, tolerations, affinity
+nodeSelector: {}
+tolerations: []
+affinity: {}
