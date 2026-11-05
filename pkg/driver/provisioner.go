@@ -92,9 +92,15 @@ func (s *ProvisionerServer) DriverCreateBucket(
 		return nil, status.Errorf(codes.Internal, "%s", err)
 	}
 	if exists {
+		// The response must carry the protocol info even when the bucket is
+		// reused: the sidecar treats a response without protocols as a
+		// terminal provisioning error.
 		if overridden {
 			klog.InfoS("Overridden bucket exists, skipping validation", "bucket", bucketName, "parameters", parameters)
-			return &cosi.DriverCreateBucketResponse{BucketId: bucketName}, nil
+			return &cosi.DriverCreateBucketResponse{
+				BucketId:  bucketName,
+				Protocols: bucketProtocols(client, bucketName),
+			}, nil
 		}
 
 		equal, err := client.IsBucketEqual(ctx, bucketName, parameters)
@@ -104,7 +110,10 @@ func (s *ProvisionerServer) DriverCreateBucket(
 		}
 		if equal {
 			klog.InfoS("Bucket already exists with matching parameters", "bucket", bucketName)
-			return &cosi.DriverCreateBucketResponse{BucketId: bucketName}, nil
+			return &cosi.DriverCreateBucketResponse{
+				BucketId:  bucketName,
+				Protocols: bucketProtocols(client, bucketName),
+			}, nil
 		}
 
 		klog.InfoS("Bucket already exists with differing parameters", "bucket", bucketName)
@@ -113,27 +122,18 @@ func (s *ProvisionerServer) DriverCreateBucket(
 
 	if err := client.CreateBucket(ctx, bucketName, parameters); err != nil {
 		klog.ErrorS(err, "Failed to create bucket", "bucket", bucketName)
+		if errors.Is(err, clients.ErrQuotaExhausted) {
+			// The object store's bucket quota is managed outside the driver;
+			// retrying cannot succeed until an operator frees quota. The
+			// sidecar treats ResourceExhausted as terminal (no retries).
+			return nil, status.Errorf(codes.ResourceExhausted, "%s", err)
+		}
 		return nil, err
 	}
 
-	protocolInfo := client.ProtocolInfo()
-	protocols := &cosi.ObjectProtocolAndBucketInfo{}
-	switch protocolInfo.GetType() {
-	case cosi.ObjectProtocol_S3:
-		protocols.S3 = &cosi.S3BucketInfo{
-			BucketId: bucketName,
-			Endpoint: client.S3Endpoint(),
-			Region:   client.S3Region(),
-			AddressingStyle: &cosi.S3AddressingStyle{
-				Style: cosi.S3AddressingStyle_PATH,
-			},
-		}
-	case cosi.ObjectProtocol_AZURE:
-		protocols.Azure = &cosi.AzureBucketInfo{}
-	}
 	return &cosi.DriverCreateBucketResponse{
 		BucketId:  bucketName,
-		Protocols: protocols,
+		Protocols: bucketProtocols(client, bucketName),
 	}, nil
 }
 
@@ -298,6 +298,28 @@ func (s *ProvisionerServer) DriverRevokeBucketAccess(
 	}
 
 	return &cosi.DriverRevokeBucketAccessResponse{}, nil
+}
+
+// bucketProtocols builds the protocol info returned for a bucket. Every
+// DriverCreateBucket success path must include it: the sidecar rejects a
+// response without protocols as a terminal provisioning error, including when
+// the bucket already existed and was reused.
+func bucketProtocols(client clients.Client, bucketName string) *cosi.ObjectProtocolAndBucketInfo {
+	protocols := &cosi.ObjectProtocolAndBucketInfo{}
+	switch client.ProtocolInfo().GetType() {
+	case cosi.ObjectProtocol_S3:
+		protocols.S3 = &cosi.S3BucketInfo{
+			BucketId: bucketName,
+			Endpoint: client.S3Endpoint(),
+			Region:   client.S3Region(),
+			AddressingStyle: &cosi.S3AddressingStyle{
+				Style: cosi.S3AddressingStyle_PATH,
+			},
+		}
+	case cosi.ObjectProtocol_AZURE:
+		protocols.Azure = &cosi.AzureBucketInfo{}
+	}
+	return protocols
 }
 
 func (s *ProvisionerServer) getName(req interface{ GetName() string }) (string, bool) {

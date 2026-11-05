@@ -16,6 +16,7 @@ package driver
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -25,6 +26,7 @@ import (
 
 	"sigs.k8s.io/container-object-storage-interface/client/apis/objectstorage/consts"
 	cosi "sigs.k8s.io/container-object-storage-interface/proto"
+	"sigs.k8s.io/cosi-driver-sample/pkg/clients"
 	"sigs.k8s.io/cosi-driver-sample/pkg/clients/fake"
 	"sigs.k8s.io/cosi-driver-sample/pkg/config"
 )
@@ -134,4 +136,78 @@ func TestDriverRevokeBucketAccess_NoBuckets(t *testing.T) {
 	_, err := server.DriverRevokeBucketAccess(context.Background(),
 		&cosi.DriverRevokeBucketAccessRequest{AccountId: "ba-account-1"})
 	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+}
+
+// quotaExhaustedClient wraps the fake client and fails bucket creation the way
+// the ONTAP client does when the object store's bucket quota is exhausted.
+type quotaExhaustedClient struct {
+	*fake.Client
+}
+
+func (c *quotaExhaustedClient) CreateBucket(context.Context, string, map[string]string) error {
+	return fmt.Errorf("failed to initiate bucket creation: %w", clients.ErrQuotaExhausted)
+}
+
+func TestDriverCreateBucket_QuotaExhausted(t *testing.T) {
+	t.Parallel()
+
+	server := &ProvisionerServer{
+		Client: &quotaExhaustedClient{fake.New(string(consts.S3Key))},
+		Config: config.Config{Errors: config.Errors{}},
+	}
+
+	_, err := server.DriverCreateBucket(context.Background(), &cosi.DriverCreateBucketRequest{
+		Name:       "bucket-3",
+		Protocols:  []*cosi.ObjectProtocol{{Type: cosi.ObjectProtocol_S3}},
+		Parameters: map[string]string{"size": "1"},
+	})
+
+	require.Error(t, err)
+	assert.Equal(t, codes.ResourceExhausted, status.Code(err))
+	assert.Contains(t, status.Convert(err).Message(), "bucket quota exhausted")
+}
+
+func TestDriverCreateBucket_ExistingBucketReturnsProtocols(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		requestName string
+		overrides   config.Overrides
+	}{
+		"existing bucket with matching parameters": {
+			requestName: "bucket-1",
+		},
+		"existing bucket via bucketID override": {
+			requestName: "ignored-name",
+			overrides:   config.Overrides{BucketID: "bucket-1"},
+		},
+	}
+
+	for name, tc := range tests {
+		tc := tc
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			client := fake.New(string(consts.S3Key))
+			require.NoError(t, client.CreateBucket(context.Background(), "bucket-1", nil))
+
+			server := &ProvisionerServer{
+				Client: client,
+				Config: config.Config{Overrides: tc.overrides, Errors: config.Errors{}},
+			}
+
+			resp, err := server.DriverCreateBucket(context.Background(), &cosi.DriverCreateBucketRequest{
+				Name:      tc.requestName,
+				Protocols: []*cosi.ObjectProtocol{{Type: cosi.ObjectProtocol_S3}},
+			})
+
+			require.NoError(t, err)
+			assert.Equal(t, "bucket-1", resp.BucketId)
+			require.NotNil(t, resp.Protocols, "reused buckets must carry protocol info")
+			require.NotNil(t, resp.Protocols.S3)
+			assert.Equal(t, "bucket-1", resp.Protocols.S3.BucketId)
+			assert.Equal(t, "http://fake-s3:8080", resp.Protocols.S3.Endpoint)
+			assert.Equal(t, "fake-region", resp.Protocols.S3.Region)
+		})
+	}
 }

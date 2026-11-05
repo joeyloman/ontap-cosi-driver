@@ -364,11 +364,12 @@ func (c *Client) CreateBucket(ctx context.Context, bucket string, params map[str
 			errMsg = jobStatus.Message
 		}
 		return &ontapJobError{
-			operation:  "create",
-			jobState:   jobStatus.State,
-			errorCode:  jobStatus.Error.Code,
-			errorMsg:   errMsg,
-			bucketName: bucket,
+			operation:      "create",
+			jobState:       jobStatus.State,
+			errorCode:      jobStatus.Error.Code,
+			errorMsg:       errMsg,
+			bucketName:     bucket,
+			quotaExhausted: isQuotaExhaustedMessage(errMsg),
 		}
 	}
 
@@ -410,11 +411,12 @@ func (c *Client) DeleteBucket(ctx context.Context, bucket string) error {
 			errMsg = jobStatus.Message
 		}
 		return &ontapJobError{
-			operation:  "deletion",
-			jobState:   jobStatus.State,
-			errorCode:  jobStatus.Error.Code,
-			errorMsg:   errMsg,
-			bucketName: bucket,
+			operation:      "deletion",
+			jobState:       jobStatus.State,
+			errorCode:      jobStatus.Error.Code,
+			errorMsg:       errMsg,
+			bucketName:     bucket,
+			quotaExhausted: isQuotaExhaustedMessage(errMsg),
 		}
 	}
 
@@ -551,10 +553,19 @@ type ontapErrorResponse struct {
 type ontapHTTPError struct {
 	statusCode int
 	message    string
+	// quotaExhausted marks a rejection caused by the object store's bucket
+	// quota being exhausted.
+	quotaExhausted bool
 }
 
 func (e *ontapHTTPError) Error() string {
 	return fmt.Sprintf("ontap API error: status=%d message=%q", e.statusCode, e.message)
+}
+
+// Is makes quota-exhaustion rejections match clients.ErrQuotaExhausted so the
+// driver can map them to a terminal gRPC code.
+func (e *ontapHTTPError) Is(target error) bool {
+	return target == clients.ErrQuotaExhausted && e.quotaExhausted
 }
 
 // ontapJobRefResponse represents the response from an async ONTAP operation
@@ -587,11 +598,30 @@ type ontapJobError struct {
 	errorCode  string
 	errorMsg   string
 	bucketName string
+	// quotaExhausted marks a job failure caused by the object store's bucket
+	// quota being exhausted.
+	quotaExhausted bool
 }
 
 func (e *ontapJobError) Error() string {
 	return fmt.Sprintf("bucket %s job failed: state=%q bucket=%q code=%q message=%q",
 		e.operation, e.jobState, e.bucketName, e.errorCode, e.errorMsg)
+}
+
+// Is makes quota-exhaustion job failures match clients.ErrQuotaExhausted so
+// the driver can map them to a terminal gRPC code.
+func (e *ontapJobError) Is(target error) bool {
+	return target == clients.ErrQuotaExhausted && e.quotaExhausted
+}
+
+// isQuotaExhaustedMessage reports whether an ONTAP error message means the
+// object store's bucket quota is exhausted. ONTAP rejects such requests with
+// HTTP 403 and an admission-webhook message such as:
+//
+//	admission webhook "edges3bucket-..." denied the request: bucket quota exhausted for object store "nootdorp"
+func isQuotaExhaustedMessage(msg string) bool {
+	lower := strings.ToLower(msg)
+	return strings.Contains(lower, "quota exhausted") || strings.Contains(lower, "quota exceeded")
 }
 
 func (c *Client) servicesPath(parts ...string) string {
@@ -662,8 +692,9 @@ func (c *Client) doJSON(
 		}
 
 		return &ontapHTTPError{
-			statusCode: resp.StatusCode,
-			message:    msg,
+			statusCode:     resp.StatusCode,
+			message:        msg,
+			quotaExhausted: isQuotaExhaustedMessage(msg),
 		}
 	}
 

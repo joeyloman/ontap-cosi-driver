@@ -16,14 +16,14 @@ fullnameOverride: ""
 
 # Driver container image
 driverImage:
-  repository: registry.example.com/kubernetes/ontap-cosi-driver
-  tag: main
+  repository: harbor.lab.atmosbv.nl/kubernetes/ontap-cosi-driver
+  tag: v0.1.2
   pullPolicy: IfNotPresent
 
 # Sidecar container image
 sidecarImage:
-  repository: registry.example.com/kubernetes/objectstorage-sidecar
-  tag: main
+  repository: harbor.lab.atmosbv.nl/kubernetes/objectstorage-sidecar
+  tag: dev-20261105
   pullPolicy: IfNotPresent
 
 # Sidecar logging

@@ -16,9 +16,15 @@ package clients
 
 import (
 	"context"
+	"errors"
 
 	cosi "sigs.k8s.io/container-object-storage-interface/proto"
 )
+
+// ErrQuotaExhausted indicates the object store has exhausted its bucket quota
+// and rejected the request. It is a terminal condition: retrying cannot
+// succeed until an operator frees quota outside the driver.
+var ErrQuotaExhausted = errors.New("bucket quota exhausted")
 
 type User interface {
 	Name() string

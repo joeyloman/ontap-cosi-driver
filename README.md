@@ -240,6 +240,20 @@ different configured size, `DriverCreateBucket` fails with `ALREADY_EXISTS`
 instead of silently reusing the existing bucket; a bucket whose size matches
 is reused as-is.
 
+## Bucket quota exhaustion
+
+The object store can enforce a bucket quota outside the driver (in the lab, an
+admission webhook on the ONTAP side). When it rejects bucket creation with
+`403 ... bucket quota exhausted for object store ...`, the driver classifies
+the error and returns gRPC `RESOURCE_EXHAUSTED`. The sidecar treats that code
+as terminal: the error is recorded once in `Bucket.status.error` and the
+Bucket is **not retried**, because retrying cannot succeed until an operator
+frees quota.
+
+After quota is freed, the Bucket stays in the failed state until a new
+reconcile is triggered: re-apply the `BucketClaim` (or delete and recreate it),
+or touch the `Bucket` object so its generation changes.
+
 ## Provisioning a bucket
 
 `config/samples/cosi-resources.yaml` contains a working set of COSI objects:
