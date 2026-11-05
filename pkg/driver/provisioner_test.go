@@ -167,6 +167,39 @@ func TestDriverCreateBucket_QuotaExhausted(t *testing.T) {
 	assert.Contains(t, status.Convert(err).Message(), "bucket quota exhausted")
 }
 
+// quotaExhaustedAccessClient wraps the fake client and fails access creation
+// the way the ONTAP client does when the object store's bucket-access quota
+// is exhausted.
+type quotaExhaustedAccessClient struct {
+	*fake.Client
+}
+
+func (c *quotaExhaustedAccessClient) CreateBucketAccess(context.Context, string, string) (clients.User, error) {
+	return nil, fmt.Errorf("failed to create bucket access: %w", clients.ErrQuotaExhausted)
+}
+
+func TestDriverGrantBucketAccess_QuotaExhausted(t *testing.T) {
+	t.Parallel()
+
+	client := &quotaExhaustedAccessClient{fake.New(string(consts.S3Key))}
+	require.NoError(t, client.CreateBucket(context.Background(), "bucket-1", nil))
+
+	server := &ProvisionerServer{
+		Client: client,
+		Config: config.Config{Errors: config.Errors{}},
+	}
+
+	_, err := server.DriverGrantBucketAccess(context.Background(),
+		&cosi.DriverGrantBucketAccessRequest{
+			AccountName: "ba-account-1",
+			Buckets:     []*cosi.DriverGrantBucketAccessRequest_AccessedBucket{{BucketId: "bucket-1"}},
+		})
+
+	require.Error(t, err)
+	assert.Equal(t, codes.ResourceExhausted, status.Code(err))
+	assert.Contains(t, status.Convert(err).Message(), "bucket quota exhausted")
+}
+
 func TestDriverCreateBucket_ExistingBucketReturnsProtocols(t *testing.T) {
 	t.Parallel()
 

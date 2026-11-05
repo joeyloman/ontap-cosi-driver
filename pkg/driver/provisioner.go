@@ -175,6 +175,8 @@ func (s *ProvisionerServer) DriverDeleteBucket(
 //
 // Return values:
 //   - nil: Access successfully granted.
+//   - codes.ResourceExhausted: The object store's bucket-access quota is
+//     exhausted; retrying cannot succeed until quota is freed.
 //   - error: Internal error requiring retries.
 func (s *ProvisionerServer) DriverGrantBucketAccess(
 	ctx context.Context,
@@ -213,6 +215,13 @@ func (s *ProvisionerServer) DriverGrantBucketAccess(
 		access, err := client.CreateBucketAccess(ctx, bucketId, name)
 		if err != nil {
 			klog.ErrorS(err, "Failed to create bucket access", "bucket", bucketId, "account", name)
+			if errors.Is(err, clients.ErrQuotaExhausted) {
+				// Match DriverCreateBucket: quota exhaustion is terminal
+				// until an operator frees quota, so the sidecar must not
+				// retry the grant (retrying would also keep the access
+				// object around and re-bill the quota once a slot frees).
+				return nil, status.Errorf(codes.ResourceExhausted, "%s", err)
+			}
 			return nil, status.Errorf(codes.Internal, "%s", err)
 		}
 
