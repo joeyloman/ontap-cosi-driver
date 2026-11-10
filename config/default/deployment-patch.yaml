@@ -1,0 +1,24 @@
+- op: add
+  path: /spec/template/spec/volumes/-
+  value:
+    name: config
+    configMap:
+      name: configuration
+      items:
+        - key: config.yaml
+          path: config.yaml
+- op: add
+  path: /spec/template/spec/containers/0/volumeMounts/-
+  value:
+    name: config
+    readOnly: true
+    mountPath: /etc/cosi
+- op: add
+  path: /spec/template/spec/containers/0/envFrom
+  value:
+    - secretRef:
+        name: credentials
+- op: add
+  path: /spec/template/spec/imagePullSecrets
+  value:
+    - name: registry-credentials

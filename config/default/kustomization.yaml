@@ -1,0 +1,31 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: ontap-cosi-driver-system
+namePrefix: ontap-cosi-
+resources:
+- ../rbac
+- ../driver
+secretGenerator:
+- name: credentials
+  literals:
+    - ONTAP_MGMT_ENDPOINT=ontap9-stub.netapp.svc.cluster.local:8080
+    - ONTAP_MGMT_SVM_UUID=11111111-2222-3333-4444-555555555555
+    - ONTAP_S3_REGION=us-east-1
+    - ONTAP_MGMT_USE_SSL=false
+    - ONTAP_MGMT_USERNAME=admin
+    - ONTAP_MGMT_PASSWORD=password
+    - ONTAP_MGMT_CA_CERT_PATH=
+    - ONTAP_MGMT_SKIP_TLS_VERIFY=false
+    - ONTAP_S3_ENDPOINT=
+    - ONTAP_S3_USE_SSL=false
+configMapGenerator:
+- name: configuration
+  files:
+  - ./config.yaml
+patches:
+- path: ./deployment-patch.yaml
+  target:
+    group: apps
+    version: v1
+    kind: Deployment
+    name: driver
